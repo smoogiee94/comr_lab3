@@ -9,6 +9,8 @@
 #define BLUE 0x4
 #define VIOLET 0x5
 #define WHITE 0x7
+#define TIMEFORGRID 3000
+#define TURNOFFSET 150
 
 Adafruit_RGBLCDShield lcd = Adafruit_RGBLCDShield();
 
@@ -24,7 +26,9 @@ float SLValue = 0;
 float SRValue = 0;    
 float LFValue = 0;   
 
+int visited = 0;
 int turns = 0;
+int currTime = 0;
 int x = 0;
 int y = 0;
 char maze[4][4] = 
@@ -37,6 +41,7 @@ char maze[4][4] =
 Servo LServo;
 Servo RServo;
 void setup() {
+  lcd.setBacklight(WHITE);
   // initialize serial communications at 9600 bps:
   LServo.attach(2);
   RServo.attach(3);
@@ -93,40 +98,73 @@ void setup() {
   
   lcd.setCursor(8, 1);
   lcd.write(maze[0][3]);
+
+  visited = 1;
 }
-int gridCount = 1;
+int setColorTime = 0;
+int previousColorTime = 0;
+int previousTime = 0;
 
-
-void loop() {
+void loop() { 
+  setColorTime = millis();
+  if (getElapsedTime() >= 500){
+    lcd.setBacklight(WHITE);
+  }
+  setTimer();
+  lcd.setCursor(10, 0);
+  lcd.write(dir);
+  
+  lcd.setCursor(10, 1);
+  lcd.print(y);
+  lcd.setCursor(11, 1);
+  lcd.write(',');
+  lcd.setCursor(12, 1);
+  lcd.print(x);
 
   
-  closeLoopCtrlPart2(6, 5);
-   
-
-    //in a new grid
-    if (((millis() - 500 * turns) / 3000 + 1) != gridCount){
+  if (getElapsedTime() >= TIMEFORGRID) //more than 3 seconds have passed
+  {
+      setPreviousTimer();
       switch(dir){
         case('N') : 
-          if (x + 1 < 4)
-            modifyAndPrint(++x,y);
+          lcd.setBacklight(BLUE);
+          previousColorTime = setColorTime;
+          if (x + 1 <= 3)
+          modifyAndPrint(++x, y);
           break;
         case('S') : 
+          lcd.setBacklight(YELLOW);
+          previousColorTime = setColorTime;
           if (x - 1 >= 0)
-            modifyAndPrint(--x,y);
+          modifyAndPrint(--x, y);
           break;
-        case('W') : 
+        case('W') :
+          lcd.setBacklight(GREEN);
+          previousColorTime = setColorTime;
           if (y - 1 >= 0)
-            modifyAndPrint(x,--y);
+          modifyAndPrint(x, --y);
           break;
-        case('E') : 
-          if (y + 1 < 4)
-            modifyAndPrint(x,++y);
+        case('E') :
+          lcd.setBacklight(RED);
+          previousColorTime = setColorTime;
+          if (y + 1 <= 3)
+          modifyAndPrint(x, ++y);
           break;
       }
-      gridCount = (millis() - 500 * turns) / 3000 + 1;
-    }
-    
+  }
 
+  if (checkVisited() == 16){
+    lcd.setBacklight(WHITE);
+    delay(2500);
+    RServo.write(90);
+    LServo.write(90);
+    delay(50000);
+  }
+    //in a new grid
+    
+    closeLoopCtrlPart2(7, 5);
+
+    
 }
 
 
@@ -177,8 +215,9 @@ void closeLoopCtrlPart2(float rt, float kp){
         RServo.write(rightServoValue);
         LServo.write(leftServoValue);
         delay(1100);
-        ++turns;
-        ++turns;
+        subtractTimer(TURNOFFSET);
+        subtractTimer(TURNOFFSET);
+        lcd.setBacklight(WHITE);
       }
 
       //Left turn
@@ -193,39 +232,56 @@ void closeLoopCtrlPart2(float rt, float kp){
           case('W') : dir = 'S';
             break;
         }
-
+        lcd.setBacklight(WHITE);
         rightServoValue = 80;
         leftServoValue = 80;
         RServo.write(rightServoValue);
         LServo.write(leftServoValue);
         delay(550);
-        ++turns;
+        subtractTimer(TURNOFFSET);
       }
     }
   }
   else if (ytr >= 10.0){
-     switch(dir){
-      case('N') : dir = 'E';
+
+
+    switch(dir){
+      case('N') : 
+        dir = 'E';
+        //++x;
         break;
-      case('S') : dir = 'W';
+      case('S') : 
+        dir = 'W';
+        //--x;
         break;
-      case('E') : dir = 'S';
+      case('E') : 
+        dir = 'S';
+        //++y;
         break;
-      case('W') : dir = 'N';
+      case('W') : 
+        dir = 'N';
+        //--y;
         break;
     }
-
+    lcd.setBacklight(WHITE);
     //right turn
     LServo.write(100);
     RServo.write(80);
     delay(1250);
+    lcd.setCursor(10, 1);
+    lcd.print(y);
+    lcd.setCursor(11, 1);
+    lcd.write(',');
+    lcd.setCursor(12, 1);
+    lcd.print(x);
+    
     RServo.write(100);
     LServo.write(100);
     delay(550);
     RServo.write(80);
     LServo.write(100);
-    delay(1000);
-    
+    delay(500);
+    delay(500);
   }
   else{
     RServo.write(rightServoValue);
@@ -313,8 +369,11 @@ float sensorRead(String sensorDirection){
 }
 
 void modifyAndPrint(int x, int y){
+  if (maze[x][y] == 'O'){
+    return;
+  }
   maze[x][y] = 'O';
-  
+  ++visited;
   if (x == 0 && y == 0){
     lcd.setCursor(5, 1);
   }
@@ -377,4 +436,29 @@ void modifyAndPrint(int x, int y){
   return;
 }
 
+void setTimer(){
+  currTime = millis();
+}
+
+void setPreviousTimer(){
+  previousTime = currTime;
+}
+void subtractTimer(int x){
+  previousTime += x;
+}
+int getElapsedTime(){
+  return (currTime - previousTime);
+}
+
+int checkVisited(){
+  int visitedNodes = 0;
+  for (int i = 0; i < 4; ++i){
+    for (int j = 0; j < 4; ++j){
+      if (maze[i][j] == 'X') return 0;
+
+      ++visitedNodes;
+    }
+  }
+  return visitedNodes;
+}
 
